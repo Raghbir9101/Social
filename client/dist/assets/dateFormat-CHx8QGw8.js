@@ -1,0 +1,1 @@
+var e=`en-IN`,t=`Asia/Kolkata`,n=n=>{if(!n)return`—`;try{let r=new Date(n);return`${r.toLocaleDateString(e,{day:`2-digit`,month:`2-digit`,year:`numeric`,timeZone:t})}, ${r.toLocaleTimeString(e,{hour:`2-digit`,minute:`2-digit`,second:`2-digit`,hour12:!0,timeZone:t})}`}catch{return`—`}};export{n as t};

@@ -428,3 +428,51 @@ FILES MODIFIED:
   client/index.html       — Full favicon <link> set + msapplication tile meta tags
   server/utils/ogMeta.js  — Favicon links added to bot-served OG HTML too
 
+
+================================================================================
+[2026-07-09] VPS DEPLOYMENT SETUP + GIT REPOSITORY INITIALIZATION
+================================================================================
+
+TASK: Configure the project for VPS deployment where only the backend runs and
+      serves the React frontend as a static build. Connect codebase to GitHub.
+
+CHANGES MADE:
+
+1. STATIC FILE SERVING (already in place, verified)
+   - server/server.js already serves client/dist in production mode
+   - express.static(CLIENT_DIST) and SPA fallback (app.get('*')) both gated on NODE_ENV=production
+   - Client API calls use VITE_API_URL=/api (relative) so no cross-origin issues on VPS
+
+2. ROOT package.json ADDED
+   - Added convenience scripts for VPS deployment:
+       npm run install:all  -> installs deps for both server and client
+       npm run build        -> installs client deps + runs vite build
+       npm start            -> starts the production server (NODE_ENV must be set to production)
+
+3. server/.env.example ADDED
+   - Template with all required environment variables for VPS setup
+   - Includes MongoDB URI, JWT secret, admin credentials, port, NODE_ENV, and AI keys
+   - NODE_ENV set to 'production' in the example (critical for static serving to activate)
+
+4. .gitignore UPDATED (root level)
+   - Added: dist/, *.local, .vscode/* (with !.vscode/extensions.json exception)
+
+5. GIT REPOSITORY INITIALIZED & PUSHED
+   - git init in project root
+   - Remote added: https://github.com/Raghbir9101/Social.git
+   - 89 source files committed (node_modules and .env excluded)
+   - Pushed to origin/master successfully
+
+VPS DEPLOYMENT STEPS (after SSH into server):
+  git clone https://github.com/Raghbir9101/Social.git
+  cd Social
+  cp server/.env.example server/.env   # then edit with real values
+  npm run build                         # installs client deps + builds React app
+  cd server && npm install              # install server deps
+  NODE_ENV=production npm start         # starts Express on PORT (default 5000)
+
+DOMAIN: social.draftly.co.in
+  - Point DNS A record to VPS IP
+  - Configure Nginx reverse proxy to forward port 80/443 -> localhost:5000
+  - Use Certbot for SSL certificate
+
