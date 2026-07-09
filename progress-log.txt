@@ -1,0 +1,430 @@
+== PROGRESS LOG — Social Campaign Project ==
+
+---
+[2026-07-09] Feature: Anonymous Q&A (NGL-style)
+---
+OVERVIEW:
+  Users can create shareable question box links. Visitors submit messages thinking
+  they are anonymous; the admin sees full analytics (IP, location, device, browser,
+  visitor ID) just like the campaign dashboard.
+
+NEW FILES:
+  server/models/QuestionBox.js      — box document: boxId, title, description, isActive
+  server/models/Question.js         — question: message, boxId, ip, location, device, visitorId
+  server/services/question.service.js — CRUD for boxes + questions
+  server/routes/question.routes.js  — REST endpoints (public + admin-protected)
+  client/src/pages/QuestionPage.jsx — beautiful public form (dark NGL-style UI)
+  client/src/pages/AdminQuestions.jsx — admin dashboard: box manager + full analytics table
+
+MODIFIED FILES:
+  server/server.js             — registered /api/qna route
+  client/src/App.jsx           — added /q/:boxId (public) + /admin/questions (protected)
+  client/src/components/admin/Sidebar.jsx — added "🔒 Anon Q&A" nav item
+
+API ENDPOINTS:
+  GET  /api/qna/boxes/:boxId      — public: get box info for the form page
+  POST /api/qna/ask/:boxId        — public: submit question (rate-limited)
+  GET  /api/qna/boxes             — admin: list all boxes
+  POST /api/qna/boxes             — admin: create box
+  DELETE /api/qna/boxes/:boxId    — admin: delete box + all its questions
+  GET  /api/qna/questions         — admin: paginated questions (filter by box, search)
+  PATCH /api/qna/questions/:id/read — admin: mark question as read
+  DELETE /api/qna/questions/:id   — admin: delete question
+
+HOW TO USE:
+  1. Go to Admin → Anon Q&A → "+ New Question Box"
+  2. Set a slug (e.g. "raghbir-anon"), title, optional description
+  3. Copy the generated link: yourdomain.com/q/raghbir-anon
+  4. Share the link — people fill in messages believing they are anonymous
+  5. Admin table shows message + full analytics (location, device, IP, visitor ID)
+
+---
+[2026-07-09] Feature: AI result rules overhaul — friend pairs, realistic special score, Barnum effect, reconnection prose
+---
+
+CHANGES:
+
+  server/services/ai.service.js + client/src/lib/resultGenerator.js (mirrored)
+
+  1. Special couple score: 100 → 84
+     "100% is suspicious." SPECIAL_SCORE constant set to 84. Fallback title changed
+     to "A Bond Worth Fighting For". aiConfidence changed from 99 → 94.
+
+  2. Friend pairs list:
+     Added FRIEND_PAIRS = [ {akanksha, vivek}, {akanksha, sonu} ]
+     isFriendPair() uses fuzzy first-name matching (same Levenshtein logic).
+     Friend pairs score capped at 30, prose clearly platonic ("Squad Goals, Not Soul Mates").
+
+  3. Barnum/Forer effect instruction (GPT system prompt):
+     Added "Astrologer Trick" section: GPT must include universally-relatable but
+     seemingly personal observations (overthinking quietly, holding feelings in, needing
+     to be liked, etc.) woven naturally into every prediction.
+
+  4. Special couple reconnection prose:
+     GPT system prompt and fallback paragraphs now include specific themes:
+     - Distance between deep connections is a chapter, not an ending
+     - Fights come from depth of feeling, not incompatibility
+     - Stubborn silence on one side; quiet waiting on the other
+     - The bravest thing is a single message: "I haven't stopped"
+     - The bond is built for the hard chapters, not just the good ones
+
+  client/src/pages/AdminVisitors.jsx
+    — Renamed column "Browser 1st Visit" → "1st Visit" for clarity.
+
+---
+[2026-07-09] Change: Visitors table now creates one row per visit (not per unique visitor)
+---
+CHANGE:
+  Previously the system upserted one visitor record and incremented a visitCount.
+  Now every call to POST /visitors/track inserts a brand new row.
+
+FILES:
+  server/models/Visitor.js
+    — Removed unique: true from visitorId (same browser can now have many rows).
+    — Removed visitCount field.
+    — Removed lastVisitTimestamp field.
+    — Added compound index on { visitorId, createdAt } for per-visitor queries.
+    — Kept firstVisitTimestamp (browser's localStorage-stored first-ever visit time).
+
+  server/services/visitor.service.js
+    — track(): replaced findOneAndUpdate/upsert with Visitor.create().
+    — getAll(): default sort changed from lastVisitTimestamp to createdAt.
+    — getByVisitorId(): returns the most recent record for a visitorId.
+
+  client/src/pages/AdminVisitors.jsx
+    — Removed "Last Visit" and "Visits" columns.
+    — Added "Visit Time" column (shows createdAt — when THIS visit happened).
+    — Kept "Browser 1st Visit" column (shows firstVisitTimestamp from localStorage).
+    — Row key changed from visitorId to _id (avoids React key collision).
+    — Default sort changed to createdAt desc.
+
+---
+[2026-07-09] Fix: Location not showing for some visitors + Feature: Variant (?v=) tracking
+---
+
+### LOCATION FIX
+ISSUE:
+  Rows with source "N/A" and IP "::1" (localhost) showed "—" for location.
+  Root cause: when the server receives connections from localhost (::1) it skips
+  IP-based lookup. The client's fallback also calls the backend /visitors/location
+  endpoint, which hits the same dead end.
+
+FIX — client/src/lib/location.js:
+  Updated getIPLocation() to:
+  1. Try the server endpoint first (works in production where headers carry real IP).
+  2. If the server returns source='unknown', fall back to a DIRECT browser-to-ipapi.co
+     fetch. Because this request originates from the user's browser, ipapi.co sees the
+     user's real public IP — bypassing the localhost server-IP problem entirely.
+  Note: existing rows already in the DB with no location cannot be retroactively fixed;
+  only new visits after this change will have location populated.
+
+FILES: client/src/lib/location.js
+
+### VARIANT (?v=) TRACKING FEATURE
+TASK:
+  Allow campaign links like /love-compatibility?v=1 or ?v=instagram to tag traffic
+  segments. Variant should be stored, shown in admin tables, and filterable.
+
+CHANGES:
+  client/src/pages/CampaignPage.jsx
+    — Reads searchParams.get('v') as `variant`.
+    — Passes variant to POST /visitors/track payload.
+    — Passes variant to POST /submissions payload.
+
+  server/models/Visitor.js
+    — Added variant: { type: String, default: '', index: true } (top-level field).
+
+  server/models/Submission.js
+    — Added variant: { type: String, default: '', index: true } (top-level field).
+
+  server/services/visitor.service.js
+    — track(): destructures + saves variant in $set.
+    — getAll(): accepts variant filter; adds query.variant = variant when provided.
+
+  server/services/submission.service.js
+    — create(): saves data.variant.
+    — getAll(): accepts + applies variant filter.
+    — exportCSV(): accepts variant; filters CSV export by variant.
+
+  server/routes/visitor.routes.js
+    — GET /: extracts variant from req.query, passes to visitorService.getAll().
+
+  server/routes/submission.routes.js
+    — GET /: extracts variant from req.query, passes to submissionService.getAll().
+    — GET /export: passes variant to exportCSV(); adds 'Variant' column to CSV output.
+
+  client/src/pages/AdminVisitors.jsx
+    — Added variantFilter state + "Filter by ?v=..." text input in toolbar.
+    — Variant filter is passed as params.variant on every fetch.
+    — Added Variant column between Campaign and First Visit; shows purple badge.
+
+  client/src/pages/AdminSubmissions.jsx
+    — Same variant filter input + state.
+    — Added Variant column between Campaign and Visitor; same purple badge style.
+    — exportCSV() now also passes the active variant filter.
+    — Updated skeleton/colSpan counts accordingly.
+
+USAGE:
+  Share links like:  https://yourdomain.com/love-compatibility?v=instagram
+  Filter in admin:   type "instagram" in the "Filter by ?v=..." input box
+
+---
+[2026-07-09] Feature: Device model detection in admin tables
+---
+TASK:
+  Show the exact phone/device model in admin Visitors and Submissions tables.
+  iOS user agents don't include model names, so the iPhone/iPad + OS version is
+  shown instead. Android user agents embed the model string (e.g. "Pixel 7",
+  "SM-S918B") between the Android version and "Build/" or ")".
+
+CHANGES:
+  client/src/lib/analytics.js
+    — Added exported parseDeviceModel(ua) function:
+        • iPhone: extracts iOS version → "iPhone (iOS 17.0)"
+        • iPad:   extracts iPadOS version → "iPad (iPadOS 17.0)"
+        • Android: extracts model from between "Android X.X; " and ") or " Build/"
+                   → e.g. "Pixel 7 (Android 13)" / "SM-S918B (Android 14)"
+    — Added deviceModel: parseDeviceModel(navigator.userAgent) to collectAnalytics()
+      device payload, so all new visitor/submission records store the model directly.
+
+  server/models/Visitor.js
+    — Added deviceModel: { type: String, default: '' } to the device sub-schema.
+
+  server/models/Submission.js
+    — Added deviceModel: { type: String, default: '' } to analytics.device sub-schema.
+
+  client/src/pages/AdminVisitors.jsx
+    — Imported parseDeviceModel from lib/analytics.
+    — Updated Device column: shows v.device.deviceModel (or parses it from the
+      stored userAgent for existing records). Falls back to deviceType if no model.
+      Shows deviceType as a subtle sub-label when both are present.
+    — Updated Browser column: now also shows browser version alongside browser name.
+
+  client/src/pages/AdminSubmissions.jsx
+    — Imported parseDeviceModel from lib/analytics.
+    — Added new "Device Model" column header after "Browser".
+    — Device Model cell uses same logic: prefers stored deviceModel, falls back to
+      parsing s.analytics.device.userAgent live for existing rows.
+    — Updated Browser column: shows browser version alongside browser name.
+    — Updated skeleton loader (12→13 cells) and empty state colSpan (12→13).
+
+RESULT:
+  Admin tables now display the exact device model for mobile visitors, e.g.:
+    Android:  "Pixel 7 (Android 13)"  or  "SM-S918B (Android 14)"
+    iPhone:   "iPhone (iOS 17.0)"
+    iPad:     "iPad (iPadOS 17.0)"
+    Desktop:  "—" (no model available from desktop user agents)
+  Works retroactively on all existing stored records via live UA parsing.
+
+---
+[2026-07-09] Fix: Submissions location always empty; incorrect browser detection; map-ready location display
+---
+ISSUES:
+  1. Submissions table showed "—" for location even though GPS coordinates existed.
+     Root cause: handleProcessingComplete() re-calls collectAnalytics() (which has no
+     location). The location captured in init() was a local variable inaccessible later.
+
+  2. Browser detection showed "Safari" for Chrome-on-iOS visitors because Apple forces all
+     iOS browsers to use WebKit. Chrome on iOS uses "CriOS/" in the UA (not "Chrome/"),
+     causing it to fall through to the Safari branch. Edge on Android uses "EdgA/".
+
+  3. Location column in both admin tables showed city/state/country OR coordinates but
+     not both, and had no way to open on a map.
+
+FIXES:
+  client/src/pages/CampaignPage.jsx
+    — Added locationRef (useRef) to capture the location resolved in init().
+    — handleProcessingComplete() now includes location in the submission analytics payload:
+      analytics: { ...analytics, location: locationRef.current || {}, performance: {...} }
+
+  client/src/lib/analytics.js
+    — Rewrote getBrowserInfo() with correct UA detection order:
+      Samsung Internet (SamsungBrowser/) → Opera (OPR/) → Edge Android (EdgA/) →
+      Edge Desktop (Edg/) → Chrome iOS (CriOS/) → Firefox iOS (FxiOS/) →
+      Firefox (Firefox/) → Chrome (Chrome/) → Safari (Safari/)
+    — Removed the old "!ua.includes('Chrome')" guard from Safari check (now unnecessary
+      because Chrome is always matched before reaching the Safari branch).
+
+  client/src/pages/AdminVisitors.jsx
+  client/src/pages/AdminSubmissions.jsx
+    — Location cell now shows: city/state/country on first line (when available),
+      then 5-decimal-place coordinates as a clickable Google Maps link on the second line.
+    — Clicking the coordinates opens Google Maps at the exact lat/lng in a new tab.
+
+
+---
+[2026-07-09] Fix: Location not showing in admin visitors table; add First Visit to submissions
+---
+ROOT CAUSE (location):
+  The browser GPS path returns lat/lng coordinates with empty city/state/country fields.
+  The server only did IP-to-location lookups (ip-api.com), which it skipped for GPS
+  visitors. No reverse geocoding existed, so location always showed "—".
+  Additionally, localhost IPs (::1, 127.0.0.1) are intentionally skipped by the IP
+  lookup, so IP-fallback visitors also showed "—" in local development.
+
+FIXES:
+  1. server/services/location.service.js
+     — Added reverseGeocode(lat, lon) method using the free OpenStreetMap Nominatim API
+       (no API key required). Extracts city/town/village, state, and country from the
+       address response.
+
+  2. server/routes/visitor.routes.js
+     — Visitor tracking route now branches:
+       • GPS visitors → calls reverseGeocode() to populate city/state/country
+       • Non-GPS visitors → falls back to IP lookup as before
+
+  3. client/src/pages/AdminVisitors.jsx
+     — Location column now shows "lat, lng" coordinates as a fallback when city/state/
+       country are empty but GPS coordinates exist (handles records already in the DB
+       before the reverse geocoding fix).
+
+  4. client/src/pages/AdminSubmissions.jsx
+     — Added "First Visit" column (firstVisitTimestamp from the Submission model) between
+       the Visitor ID and Submitted columns.
+     — Updated column header array, row cell, loading skeleton count (11→12), and
+       empty-state colSpan (11→12).
+
+
+---
+[2026-07-09] Feature: Show full IDs in admin tables — remove truncation
+---
+CHANGE:
+  Admin table cells were slicing visitor IDs to 8 characters (e.g. "21f83fc6...") and
+  applying CSS `truncate` / `max-w-[*]` constraints that hid the rest of the value.
+  The result column in Submissions was also being truncated via `max-w-[150px] truncate`.
+
+  Updated all affected cells to show their full, untruncated values using `whitespace-nowrap`
+  (the parent table already has `overflow-x-auto` so horizontal scrolling handles overflow).
+
+FILES CHANGED:
+  - client/src/pages/AdminVisitors.jsx   (visitorId cell: removed slice/truncate)
+  - client/src/pages/AdminSubmissions.jsx (visitorId cell + result cell: removed slice/truncate)
+
+
+---
+[2026-07-09] Fix: Critical Tailwind CSS cascade layer conflict — broken layout, padding, margins
+---
+ISSUE:
+  `client/src/index.css` contained a bare `* { margin: 0; padding: 0; box-sizing: border-box; }`
+  reset OUTSIDE any CSS `@layer` block. In CSS Cascade Layers, unlayered styles always have
+  higher cascade precedence than named-layer styles, regardless of selector specificity.
+  Because all Tailwind v4 utility classes live inside `@layer utilities`, this single unlayered
+  rule silently overrode EVERY Tailwind margin and padding utility:
+    - `lg:ml-64` → margin-left: 0 (instead of 256px) → sidebar covered the page content
+    - `p-4`, `p-5`, `p-6`, `px-3`, `py-2` → all padding: 0 → no inner spacing in any card
+    - `space-y-6`, `mb-1`, `mt-4` → all margin: 0 → section spacing collapsed
+  The result was a completely broken layout: the sidebar overlapped the content, stat cards
+  had no internal padding, and all inter-element spacing was gone.
+  Tailwind v4's preflight (in `@layer base`) already resets margin and padding — the custom
+  reset was both redundant and actively destructive.
+
+FIX:
+  Removed the `* { margin: 0; padding: 0; box-sizing: border-box; }` block from
+  `client/src/index.css`. Tailwind v4's built-in preflight provides the same reset inside
+  the proper `@layer base`, which does not conflict with utility classes.
+
+FILES CHANGED:
+  - client/src/index.css  (removed redundant unlayered * reset)
+
+RESULT:
+  All Tailwind margin, padding, and spacing utilities now apply correctly. The sidebar
+  offset (`lg:ml-64`), card padding (`p-4`, `p-5`), section spacing (`space-y-6`), and
+  all other layout utilities are restored.
+
+
+---
+[2026-07-09] Fix: Tailwind / Lightning CSS backdrop-filter bug
+---
+ISSUE:
+  The `.glass` and `.glass-strong` custom CSS classes in `client/src/index.css` defined
+  both `-webkit-backdrop-filter` and `backdrop-filter` with multi-function values
+  (e.g. `blur(24px) saturate(150%)`). Lightning CSS (the CSS optimizer used by
+  Tailwind v4's Vite plugin) was incorrectly retaining only the `-webkit-backdrop-filter`
+  version in the compiled output and dropping the standard `backdrop-filter` property.
+  Chrome 104+ removed support for `-webkit-backdrop-filter`, so the glassmorphism blur
+  effect was silently broken in all modern Chromium-based browsers.
+  `.glass-light` (which only used `blur()`) was unaffected — confirming the bug was
+  triggered specifically by multi-function backdrop-filter values.
+
+FIX:
+  Removed the manual `-webkit-backdrop-filter` prefixes from `.glass` and `.glass-strong`
+  in `client/src/index.css`. With only the standard `backdrop-filter` in the source,
+  Lightning CSS now correctly adds the `-webkit-` prefix via autoprefixing AND retains
+  the standard property — resulting in both being present in the compiled output.
+
+FILES CHANGED:
+  - client/src/index.css  (removed -webkit-backdrop-filter from .glass and .glass-strong)
+
+RESULT:
+  Compiled CSS now contains both `backdrop-filter` and `-webkit-backdrop-filter` for
+  `.glass` and `.glass-strong`, restoring the glassmorphism blur effect across all
+  modern browsers (Chrome, Firefox, Safari).
+
+================================================================================
+[2026-07-09 19:41] FEATURE: Open Graph / Social Preview Meta Tags
+================================================================================
+
+TASK:
+  Add proper meta tags (title, description, thumbnail) so that when any link
+  from the website is shared on WhatsApp, Discord, Telegram, Twitter, iMessage,
+  etc., it renders a rich link-preview card instead of a bare URL.
+
+APPROACH:
+  Two-layer strategy:
+  1. SERVER-SIDE (authoritative): The Express server detects crawler/bot
+     User-Agents and returns a lightweight HTML document with OG/Twitter Card
+     meta tags � *before* the React SPA is loaded. This is the only method that
+     works for WhatsApp, Telegram, and Discord since they never execute JS.
+  2. CLIENT-SIDE (best-effort): A small utility updates document title and
+     meta tag DOM nodes at runtime so that native share sheets (iOS/Android)
+     and JS-capable crawlers (Google) always reflect the current page content.
+
+FILES CHANGED:
+  NEW  client/public/og-campaign.png       � 1200�630 OG image for campaign pages
+  NEW  client/public/og-question.png       � 1200�630 OG image for anonymous Q&A
+  MOD  client/index.html                   � Default OG + Twitter Card meta tags
+  NEW  server/utils/ogMeta.js              � isBot() detector + buildOGHtml() generator
+  MOD  server/server.js                    � Imports ogMeta; adds static file serving
+                                             (production); adds async OG middleware;
+                                             adds SPA fallback for production
+  NEW  client/src/lib/metaTags.js          � setPageMeta() + pageMeta preset helpers
+  MOD  client/src/pages/CampaignPage.jsx   � Calls pageMeta.campaign() on load,
+                                             pageMeta.result() when result appears
+  MOD  client/src/pages/QuestionPage.jsx   � Calls pageMeta.questionBox() on load
+
+DYNAMIC OG LOGIC (server middleware):
+  /?r=shareId          ? Looks up Submission; title = "Name1 & Name2 scored X% ??"
+  /q/:boxId            ? Looks up QuestionBox; title = box.title; purple theme
+  /:campaignId         ? Looks up Campaign; title = campaign.title + tagline
+  /* (fallback)        ? Default "AI Predictions � Love Compatibility" with OG image
+
+PRODUCTION SETUP:
+  In production (NODE_ENV=production) the Express server now also:
+  - Serves client/dist as static files
+  - Falls back to client/dist/index.html for all non-API, non-bot GET requests
+
+
+================================================================================
+[2026-07-09 19:45] FEATURE: Favicon (all sizes + formats)
+================================================================================
+
+TASK:
+  Add a custom favicon matching the app's pink/dark aesthetic, covering all
+  standard sizes and formats for browsers, iOS, Android, and Windows.
+
+GENERATED IMAGE:
+  Dark background (#07070e) with two glowing pink neon hearts � clean, bold,
+  recognizable at 16x16. Source generated at 1024x1024 then downsampled.
+
+FILES CREATED (client/public/):
+  favicon.ico          � 32x32 ICO for legacy browsers (IE, old Edge)
+  favicon-16x16.png    � Standard tab favicon
+  favicon-32x32.png    � Retina tab / taskbar favicon
+  favicon-192x192.png  � Android home screen / PWA icon
+  favicon-512x512.png  � PWA splash / large display
+  apple-touch-icon.png � iOS "Add to Home Screen" icon (180x180)
+
+FILES MODIFIED:
+  client/index.html       � Full favicon <link> set + msapplication tile meta tags
+  server/utils/ogMeta.js  � Favicon links added to bot-served OG HTML too
+
