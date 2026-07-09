@@ -64,10 +64,8 @@ app.use('/api/{*path}', (req, res) => {
   res.status(404).json({ success: false, message: 'API endpoint not found' });
 });
 
-// ─── Static files (production build) ───────────────
-if (env.NODE_ENV === 'production') {
-  app.use(express.static(CLIENT_DIST));
-}
+// ─── Static files ───────────────────────────────────
+app.use(express.static(CLIENT_DIST));
 
 // ─── OG / Social-Preview Middleware ─────────────────
 // Intercepts link-preview bots before serving the SPA and returns a lightweight
@@ -143,12 +141,10 @@ app.use(async (req, res, next) => {
   }));
 });
 
-// ─── SPA Fallback (production) ──────────────────────
-if (env.NODE_ENV === 'production') {
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(CLIENT_DIST, 'index.html'));
-  });
-}
+// ─── SPA Fallback ───────────────────────────────────
+app.get('*', (req, res) => {
+  res.sendFile(path.join(CLIENT_DIST, 'index.html'));
+});
 
 // ─── Global Error Handler ───────────────────────────
 app.use((err, req, res, next) => {
