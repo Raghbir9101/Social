@@ -142,7 +142,7 @@ app.use(async (req, res, next) => {
 });
 
 // ─── SPA Fallback ───────────────────────────────────
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(CLIENT_DIST, 'index.html'));
 });
 
