@@ -14,6 +14,7 @@ const QuestionPage = () => {
   const [message, setMessage] = useState('');
   const [state, setState] = useState('loading'); // loading | form | submitting | done | error | notfound
   const [charCount, setCharCount] = useState(0);
+  const [locationStatus, setLocationStatus] = useState('detecting'); // detecting | gps | ip | none
   const locationRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -25,12 +26,36 @@ const QuestionPage = () => {
         setBox(res.data.data);
         pageMeta.questionBox(res.data.data);
 
-        // Collect analytics silently in background
-        const [location] = await Promise.all([
-          getLocation(),
-        ]);
-        locationRef.current = location;
+        // Show form immediately
         setState('form');
+
+        // Collect location and track visit in background
+        const location = await getLocation();
+        locationRef.current = location;
+
+        // Update location status based on source
+        if (location?.source === 'browser_gps') {
+          setLocationStatus('gps');
+        } else if (location?.source === 'ip_lookup') {
+          setLocationStatus('ip');
+        } else {
+          setLocationStatus('none');
+        }
+
+        // Track the visit with location data
+        const visitorInfo = getVisitorInfo();
+        const analytics = collectAnalytics();
+        console.log('🗺 Tracking QNA visit with location:', { boxId, location, source: location?.source });
+        api.post('/qna/track-visit', {
+          boxId,
+          ...visitorInfo,
+          location,
+          device: analytics.device,
+        })
+        .then(() => console.log('✅ QNA visit tracked successfully'))
+        .catch((err) => {
+          console.error('❌ Failed to track QNA visit:', err);
+        });
       } catch {
         setState('notfound');
       }
@@ -214,9 +239,38 @@ const QuestionPage = () => {
         </div>
 
         {/* Footer note */}
-        <p className="text-center text-xs text-gray-700 mt-5">
-          Your identity is hidden. Messages are delivered anonymously.
-        </p>
+        <div className="mt-5 space-y-2">
+          <p className="text-center text-xs text-gray-700">
+            Your identity is hidden. Messages are delivered anonymously.
+          </p>
+
+          {/* Location status indicator */}
+          {locationStatus !== 'detecting' && (
+            <div className="flex items-center justify-center gap-2">
+              {locationStatus === 'gps' && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs"
+                  style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                  <span className="text-emerald-400">📍</span>
+                  <span className="text-emerald-300 font-medium">Location shared via GPS</span>
+                </div>
+              )}
+              {locationStatus === 'ip' && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs"
+                  style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)' }}>
+                  <span className="text-blue-400">🌐</span>
+                  <span className="text-blue-300 font-medium">Approximate location from IP</span>
+                </div>
+              )}
+              {locationStatus === 'none' && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs"
+                  style={{ background: 'rgba(156,163,175,0.08)', border: '1px solid rgba(156,163,175,0.15)' }}>
+                  <span className="text-gray-500">🔒</span>
+                  <span className="text-gray-500 font-medium">No location shared</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

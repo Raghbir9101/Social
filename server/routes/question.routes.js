@@ -24,6 +24,48 @@ router.get('/boxes/:boxId', publicLimiter, async (req, res) => {
 });
 
 /**
+ * POST /api/qna/track-visit — track a visit to the QNA form (location tracking)
+ */
+router.post('/track-visit', publicLimiter, async (req, res) => {
+  try {
+    const { boxId, visitorId, sessionId, firstVisitTimestamp, location: clientLocation, device } = req.body;
+
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.headers['x-real-ip']
+      || req.connection?.remoteAddress
+      || req.ip
+      || '';
+
+    // Location resolution — same logic as visitor tracking
+    let location;
+    const loc = clientLocation;
+    if (loc?.source === 'browser_gps' && loc.latitude != null && loc.longitude != null) {
+      const geoNames = await locationService.reverseGeocode(loc.latitude, loc.longitude);
+      location = { ...loc, ...geoNames };
+    } else {
+      const ipLocation = await locationService.lookupByIP(ip);
+      location = { ...ipLocation, ...(loc || {}), source: loc?.source || ipLocation.source };
+    }
+
+    // Store the visit with location
+    await questionService.trackVisit({
+      boxId,
+      visitorId,
+      sessionId,
+      firstVisitTimestamp,
+      ip,
+      location,
+      device: device || {},
+    });
+
+    return sendSuccess(res, { tracked: true }, 'Visit tracked');
+  } catch (err) {
+    console.error('Track QNA visit error:', err);
+    return sendError(res, 'Failed to track visit');
+  }
+});
+
+/**
  * POST /api/qna/ask/:boxId — submit an anonymous question
  */
 router.post('/ask/:boxId', submissionLimiter, async (req, res) => {
@@ -149,6 +191,25 @@ router.delete('/questions/:id', auth, async (req, res) => {
     return sendSuccess(res, null, 'Question deleted');
   } catch (err) {
     return sendError(res, 'Failed to delete question');
+  }
+});
+
+/**
+ * GET /api/qna/visits — paginated list of QNA form visits (admin)
+ */
+router.get('/visits', auth, async (req, res) => {
+  try {
+    const { page, limit, boxId, search, sortOrder } = req.query;
+    const result = await questionService.getVisits({
+      page: Number(page) || 1,
+      limit: Number(limit) || 25,
+      boxId,
+      search,
+      sortOrder: sortOrder === 'asc' ? 1 : -1,
+    });
+    return sendPaginated(res, result.visits, result.pagination);
+  } catch (err) {
+    return sendError(res, 'Failed to fetch visits');
   }
 });
 
