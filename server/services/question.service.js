@@ -1,6 +1,5 @@
 import QuestionBox from '../models/QuestionBox.js';
 import Question from '../models/Question.js';
-import QnaVisit from '../models/QnaVisit.js';
 
 class QuestionService {
   // ─── Boxes ────────────────────────────────────────────
@@ -79,49 +78,6 @@ class QuestionService {
     const query = { isRead: false };
     if (boxId) query.boxId = boxId;
     return Question.countDocuments(query);
-  }
-
-  // ─── QNA Visits ───────────────────────────────────────
-
-  async trackVisit(data) {
-    return QnaVisit.create({
-      boxId: data.boxId,
-      visitorId: data.visitorId || '',
-      sessionId: data.sessionId || '',
-      firstVisitTimestamp: data.firstVisitTimestamp || null,
-      ip: data.ip || '',
-      location: data.location || {},
-      device: data.device || {},
-    });
-  }
-
-  async getVisits({ page = 1, limit = 25, boxId, search, sortOrder = -1 }) {
-    const query = {};
-    if (boxId) query.boxId = boxId;
-    if (search) {
-      query.$or = [
-        { visitorId: { $regex: search, $options: 'i' } },
-        { ip: { $regex: search, $options: 'i' } },
-        { 'location.city': { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    const total = await QnaVisit.countDocuments(query);
-    const visits = await QnaVisit.find(query)
-      .sort({ createdAt: sortOrder })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean();
-
-    return {
-      visits,
-      pagination: {
-        total,
-        page: Number(page),
-        limit: Number(limit),
-        pages: Math.ceil(total / limit),
-      },
-    };
   }
 }
 

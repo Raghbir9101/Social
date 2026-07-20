@@ -26,7 +26,6 @@ const MessageModal = ({ message, onClose }) => {
 
 const AdminQuestions = () => {
   const [expandedMessage, setExpandedMessage] = useState(null);
-  const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'visits'
 
   // ─── Boxes ─────────────────────────────────────────────
   const [boxes, setBoxes] = useState([]);
@@ -44,16 +43,6 @@ const AdminQuestions = () => {
   const [search, setSearch] = useState('');
   const [sortOrder, setSortOrder] = useState('desc');
   const debounceRef = useRef(null);
-
-  // ─── Visits ────────────────────────────────────────────
-  const [visits, setVisits] = useState([]);
-  const [visitsPagination, setVisitsPagination] = useState({ total: 0, page: 1, limit: 25, pages: 0 });
-  const [visitsLoading, setVisitsLoading] = useState(true);
-  const [visitsBoxFilter, setVisitsBoxFilter] = useState('');
-  const [visitsSearchInput, setVisitsSearchInput] = useState('');
-  const [visitsSearch, setVisitsSearch] = useState('');
-  const [visitsSortOrder, setVisitsSortOrder] = useState('desc');
-  const visitsDebounceRef = useRef(null);
 
   // ─── Fetch boxes ────────────────────────────────────────
   const fetchBoxes = useCallback(async () => {
@@ -89,33 +78,6 @@ const AdminQuestions = () => {
   }, [boxFilter, search, sortOrder]);
 
   useEffect(() => { fetchQuestions(1); }, [fetchQuestions]);
-
-  // ─── Debounced visits search ─────────────────────────────
-  useEffect(() => {
-    if (visitsDebounceRef.current) clearTimeout(visitsDebounceRef.current);
-    visitsDebounceRef.current = setTimeout(() => setVisitsSearch(visitsSearchInput), 400);
-    return () => clearTimeout(visitsDebounceRef.current);
-  }, [visitsSearchInput]);
-
-  // ─── Fetch visits ────────────────────────────────────────
-  const fetchVisits = useCallback(async (page = 1) => {
-    setVisitsLoading(true);
-    try {
-      const params = { page, limit: 25, sortOrder: visitsSortOrder };
-      if (visitsBoxFilter) params.boxId = visitsBoxFilter;
-      if (visitsSearch) params.search = visitsSearch;
-      const res = await api.get('/qna/visits', { params });
-      if (res.data?.success) {
-        setVisits(res.data.data || []);
-        setVisitsPagination(res.data.pagination || { total: 0, page: 1, limit: 25, pages: 0 });
-      }
-    } catch {}
-    finally { setVisitsLoading(false); }
-  }, [visitsBoxFilter, visitsSearch, visitsSortOrder]);
-
-  useEffect(() => {
-    if (activeTab === 'visits') fetchVisits(1);
-  }, [activeTab, fetchVisits]);
 
   // ─── Box create ──────────────────────────────────────────
   const handleCreateBox = async (e) => {
@@ -175,32 +137,7 @@ const AdminQuestions = () => {
       <MessageModal message={expandedMessage} onClose={() => setExpandedMessage(null)} />
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-display font-bold text-white">Anonymous Q&amp;A</h1>
-            {/* Tab switcher */}
-            <div className="flex items-center gap-1 px-1 py-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
-              <button
-                onClick={() => setActiveTab('questions')}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
-                style={{
-                  background: activeTab === 'questions' ? 'rgba(168,85,247,0.15)' : 'transparent',
-                  color: activeTab === 'questions' ? '#c084fc' : '#9ca3af',
-                }}
-              >
-                Questions
-              </button>
-              <button
-                onClick={() => setActiveTab('visits')}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
-                style={{
-                  background: activeTab === 'visits' ? 'rgba(168,85,247,0.15)' : 'transparent',
-                  color: activeTab === 'visits' ? '#c084fc' : '#9ca3af',
-                }}
-              >
-                Visits {visitsPagination.total > 0 && `(${visitsPagination.total})`}
-              </button>
-            </div>
-          </div>
+          <h1 className="text-2xl font-display font-bold text-white">Anonymous Q&amp;A</h1>
           <button
             onClick={() => setShowCreateBox(v => !v)}
             className="px-4 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
@@ -293,7 +230,6 @@ const AdminQuestions = () => {
         )}
 
         {/* ─── Questions table ─────────────────────────── */}
-        {activeTab === 'questions' && (
         <div>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
             <h2 className="text-lg font-semibold text-white flex-1">
@@ -527,200 +463,6 @@ const AdminQuestions = () => {
             )}
           </div>
         </div>
-        )}
-
-        {/* ─── Visits table ────────────────────────────── */}
-        {activeTab === 'visits' && (
-        <div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
-            <h2 className="text-lg font-semibold text-white flex-1">
-              Form Visits (Location Tracking)
-              {visitsPagination.total > 0 && <span className="text-gray-500 text-sm font-normal ml-2">({visitsPagination.total})</span>}
-            </h2>
-            <div className="flex items-center gap-2 flex-wrap">
-              <select value={visitsBoxFilter} onChange={e => setVisitsBoxFilter(e.target.value)} style={inputStyle}
-                className="px-3 py-2 rounded-xl text-sm outline-none cursor-pointer">
-                <option value="">All Boxes</option>
-                {boxes.map(b => <option key={b.boxId} value={b.boxId}>{b.title}</option>)}
-              </select>
-              <select value={visitsSortOrder} onChange={e => setVisitsSortOrder(e.target.value)} style={inputStyle}
-                className="px-3 py-2 rounded-xl text-sm outline-none cursor-pointer">
-                <option value="desc">Newest first</option>
-                <option value="asc">Oldest first</option>
-              </select>
-              <input type="text" placeholder="Search visits..." value={visitsSearchInput}
-                onChange={e => setVisitsSearchInput(e.target.value)}
-                style={inputStyle} className="px-4 py-2 rounded-xl text-sm placeholder-gray-500 outline-none w-full sm:w-48" />
-            </div>
-          </div>
-
-          <div className="rounded-2xl overflow-hidden" style={cardStyle}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Box', 'Visit Time', '1st Visit', 'Location', 'Source', 'Browser', 'Device', 'IP', 'Visitor ID'].map(label => (
-                      <th key={label} className="px-4 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visitsLoading ? (
-                    Array(5).fill(0).map((_, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                        {Array(9).fill(0).map((_, j) => (
-                          <td key={j} className="px-4 py-3"><div className="h-4 rounded animate-pulse" style={{ background: 'rgba(255,255,255,0.05)' }} /></td>
-                        ))}
-                      </tr>
-                    ))
-                  ) : visits.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center py-16 text-gray-600">
-                      <div className="text-4xl mb-3">📍</div>
-                      <p>No visits tracked yet</p>
-                      <p className="text-xs mt-1">Share a question box link to start tracking visits.</p>
-                    </td></tr>
-                  ) : visits.map(v => (
-                    <tr key={v._id}
-                      className="transition-colors hover:bg-white/5"
-                      style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}
-                    >
-                      {/* Box */}
-                      <td className="px-4 py-4">
-                        <span className="px-2 py-0.5 rounded-md text-xs whitespace-nowrap" style={{ background: 'rgba(168,85,247,0.1)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.15)' }}>
-                          {v.boxId}
-                        </span>
-                      </td>
-
-                      {/* Visit Time */}
-                      <td className="px-4 py-4 text-gray-300 text-xs whitespace-nowrap">{formatDateTime(v.createdAt)}</td>
-
-                      {/* 1st Visit */}
-                      <td className="px-4 py-4 text-gray-500 text-xs whitespace-nowrap">{formatDateTime(v.firstVisitTimestamp)}</td>
-
-                      {/* Location */}
-                      <td className="px-4 py-4 text-xs">
-                        {(() => {
-                          const loc = v.location;
-                          const place = [loc?.city, loc?.state, loc?.country].filter(Boolean).join(', ');
-                          const hasCoords = loc?.latitude != null && loc?.longitude != null;
-                          const coords = hasCoords ? `${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}` : null;
-                          const mapsUrl = hasCoords ? `https://www.google.com/maps?q=${loc.latitude},${loc.longitude}` : null;
-                          const timezone = loc?.timezone || '';
-                          const isp = loc?.isp || '';
-
-                          if (!place && !coords) return <span className="text-gray-600">—</span>;
-                          return (
-                            <div className="space-y-1">
-                              {place && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs">📍</span>
-                                  <span className="text-gray-200 whitespace-nowrap font-medium">{place}</span>
-                                </div>
-                              )}
-                              {coords && (
-                                <div className="flex items-center gap-1.5">
-                                  {mapsUrl ? (
-                                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-                                      className="flex items-center gap-1 text-cyan-500 hover:text-cyan-400 font-mono transition-colors text-[11px] hover:underline"
-                                      title="Open in Google Maps">
-                                      <span>🗺</span>
-                                      <span>{coords}</span>
-                                    </a>
-                                  ) : (
-                                    <div className="text-gray-400 font-mono text-[11px]">{coords}</div>
-                                  )}
-                                </div>
-                              )}
-                              {timezone && (
-                                <div className="text-gray-500 text-[10px] flex items-center gap-1">
-                                  <span>🕐</span>
-                                  <span>{timezone}</span>
-                                </div>
-                              )}
-                              {isp && (
-                                <div className="text-gray-600 text-[10px] truncate max-w-50" title={isp}>
-                                  <span>🌐 {isp}</span>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </td>
-
-                      {/* Source badge */}
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 999, fontSize: 10, fontWeight: 600,
-                            background: v.location?.source === 'browser_gps' ? 'rgba(16,185,129,0.12)' : v.location?.source === 'ip_lookup' ? 'rgba(59,130,246,0.12)' : 'rgba(156,163,175,0.12)',
-                            color: v.location?.source === 'browser_gps' ? '#34d399' : v.location?.source === 'ip_lookup' ? '#60a5fa' : '#9ca3af',
-                            border: `1px solid ${v.location?.source === 'browser_gps' ? 'rgba(16,185,129,0.2)' : v.location?.source === 'ip_lookup' ? 'rgba(59,130,246,0.2)' : 'rgba(156,163,175,0.2)'}`,
-                          }}>
-                            {v.location?.source === 'browser_gps' ? '📍 GPS' : v.location?.source === 'ip_lookup' ? '🌐 IP' : '❓ N/A'}
-                          </span>
-                          {v.location?.accuracy != null && v.location.source === 'browser_gps' && (
-                            <span className="text-[9px] text-gray-600" title="GPS accuracy in meters">
-                              ±{Math.round(v.location.accuracy)}m
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Browser */}
-                      <td className="px-4 py-4 text-gray-300 text-xs whitespace-nowrap">
-                        {v.device?.browser || '—'}{v.device?.browserVersion ? ` ${v.device.browserVersion}` : ''}
-                      </td>
-
-                      {/* Device */}
-                      <td className="px-4 py-4 text-xs">
-                        {(() => {
-                          const model = v.device?.deviceModel || parseDeviceModel(v.device?.userAgent);
-                          const type = v.device?.deviceType || '';
-                          if (!model && !type) return <span className="text-gray-600">—</span>;
-                          return (
-                            <div className="space-y-0.5">
-                              {model ? <div className="text-gray-200 whitespace-nowrap">{model}</div> : <div className="text-gray-400 whitespace-nowrap">{type}</div>}
-                              {model && type && <div className="text-gray-600 text-[11px] whitespace-nowrap">{type}</div>}
-                            </div>
-                          );
-                        })()}
-                      </td>
-
-                      {/* IP */}
-                      <td className="px-4 py-4 text-gray-400 text-xs font-mono whitespace-nowrap">{v.ip || '—'}</td>
-
-                      {/* Visitor ID */}
-                      <td className="px-4 py-4 text-gray-600 text-xs font-mono whitespace-nowrap">{v.visitorId || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            {visitsPagination.pages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <p className="text-xs text-gray-500">
-                  {((visitsPagination.page - 1) * visitsPagination.limit) + 1}–{Math.min(visitsPagination.page * visitsPagination.limit, visitsPagination.total)} of {visitsPagination.total}
-                </p>
-                <div className="flex gap-1">
-                  {visitsPagination.page > 1 && <button onClick={() => fetchVisits(visitsPagination.page - 1)} className="px-3 py-1 rounded-lg text-xs text-gray-400 hover:text-white cursor-pointer">← Prev</button>}
-                  {Array.from({ length: Math.min(visitsPagination.pages, 7) }, (_, i) => Math.max(1, visitsPagination.page - 3) + i)
-                    .filter(p => p <= visitsPagination.pages).map(p => (
-                    <button key={p} onClick={() => fetchVisits(p)} className="px-3 py-1 rounded-lg text-xs cursor-pointer"
-                      style={{ background: p === visitsPagination.page ? 'rgba(168,85,247,0.2)' : 'transparent', color: p === visitsPagination.page ? '#c084fc' : '#9ca3af' }}>
-                      {p}
-                    </button>
-                  ))}
-                  {visitsPagination.page < visitsPagination.pages && <button onClick={() => fetchVisits(visitsPagination.page + 1)} className="px-3 py-1 rounded-lg text-xs text-gray-400 hover:text-white cursor-pointer">Next →</button>}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        )}
       </div>
     </Sidebar>
   );
